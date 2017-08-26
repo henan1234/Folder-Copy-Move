@@ -5,11 +5,17 @@ using System.Threading;
 using System.IO;
 using System.Timers;
 using System.ComponentModel;
-
+using System.Linq;
 
 namespace FolderMove
 
 {
+    /// <summary>
+    /// WinForm app to copy/move files, including large file set that can be network limiting, with a fire and forget feature that will only
+    /// run during quiet periods.
+    /// TODO: Add in user folder move (moving from an old computer to new). Implement a progress bar rather than a print out of file finished copy. Possible
+    /// find a better display of current files and size that is not so slow.
+    /// </summary>
     public partial class FolderMoveWindow : Form
     {
         
@@ -82,9 +88,13 @@ namespace FolderMove
             _pts = new PauseTokenSource();
             var pausetoken = _pts.Token;
 
+            var progress = new Progress<int>(percent =>
+            {
+                listBox1.Items.Add(percent + "%");
+            });
+
             timer1.Tick += new EventHandler(Timer1_Tick);
             timer2.Tick += new EventHandler(Timer2_Tick);
-
 
             ///This will check the time. If after 6pm it will start now
             ///If before 6 it starts the timer loop (where it starts timer 2
@@ -110,44 +120,62 @@ namespace FolderMove
                     PauseBtn_Click();
                     PrepareControlForStart();
                     listBox1.Items.Add("**********File Copy has Started!*****");
-                    await RunCopyorMoveAfterSeven(_pts.Token, _cts.Token);
+                    await RunCopyorMoveAfterSeven(_pts.Token, _cts.Token, progress);
                     timer2.Interval = (int)MilliSecondsToNextPauseTime(PauseTime);
                     timer2.Start();
                 }
                 
             }
 
-            ///This is only indication of a move. Everything else is a copy
+            ///This is only indication of a move. Everything else is a copy, except for if you do checkbox 1, and then the check is in method
             if (!checkBox1.Checked && (checkBox2.Checked))
             {
                 listBox1.Items.Add("**********File Move has Started!*****");
                 listBox1.Items.Add("This will delete the source path. If you did not intend that please hit Stop Copy");
                 PrepareControlForStart();
-                RunCopyorMove();
+                RunCopyorMove(progress);
             }
             /// If no option selected it runs now, and does a copy
             if (!checkBox1.Checked && (!checkBox2.Checked))
             {
                 listBox1.Items.Add("**********File Copy has Started!*****");
                 PrepareControlForStart();
-                RunCopyorMove();
+                RunCopyorMove(progress);
 
             }
         }
-
+        /// <summary>
+        /// This will tick the timer and cause the pause to be pressed, starting the copy/move method
+        /// It will then start timer 2.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void Timer1_Tick(object sender, EventArgs e)
         {
             timer1.Stop();
 
             PauseBtn_Click();
+
+            var progress = new Progress<int>(percent =>
+            {
+                listBox1.Items.Add(percent + "%");
+            });
+
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-            RunCopyorMoveAfterSeven(_pts.Token, _cts.Token);
+            ///I am not worried about this not being awaited, because I do actually want the timer2 to start before the execution of the move/copy finishes
+            RunCopyorMoveAfterSeven(_pts.Token, _cts.Token, progress);
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 
             timer2.Interval = (int)MilliSecondsToNextPauseTime(PauseTime);
             timer2.Start();
         }
-
+        /// <summary>
+        /// When timer2 ticks, it will cancel the operation. This has to happen because the CopytoAsync for whatever reason
+        /// was not getting feed any response to the token being envoked, so I just have it cancelled instead.
+        /// This then starts the timer loop off again. This timer loop will run contiously until the app closes.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void Timer2_Tick(object sender, EventArgs e)
         {
             timer2.Stop();
@@ -190,38 +218,62 @@ namespace FolderMove
             listBox1.Items.Add("**********File Copy has Stopped!*****");
 
         }
-
-
-
-        private void ExitBtn_Click(object sender, EventArgs e)
-        {
-            if (_cts != null)
-                MessageBox.Show("File Copy is running is running. Cancel the copy first then close the application!");
-            else
-                this.Close();
-        }
-
+        /// <summary>
+        /// This Async pause does work really well, just have to have methods that will actually take it as token, like cancel token.
+        /// But even without that it does allow you to do your code a little bit cleaner, atlthough from the looks of things
+        /// I am not too worried about how clean my code looks...
+        /// </summary>
         public void PauseBtn_Click()
         {
             if (_pts != null)   
             _pts.IsPaused = !_pts.IsPaused;
 
         }
-        public async void RunCopyorMove()
+        /// <summary>
+        /// This is the base copy/move function that I call when timing is not important. For me this would only run
+        /// on our main network, and not at any facility site, but it would be really great for things like large
+        /// path restores which will take a long time, and can function in a fire and forget kind of way.
+        /// In all honestly the need for something like this is minuscule, since robocopy exists and it is much easier to implement
+        /// But this would allow for easier use for end users, and in the end I wanted my app to be able to do both;
+        /// Be a timer move/copy and a standard move/copy, so we can call a single app up to do multiple things.
+        /// </summary>
+        public async void RunCopyorMove(IProgress<int> progress)
         {
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
             string StartDirectory = @SrcPath.Text;
             string EndDirectory = @DestPath.Text;
+            ///Checkbox2 indicates a move, rather than a copy.
             if (checkBox2.Checked)
             {
                 try
                 {
+                    ///This warning is nice to have so the user does not accidentally do a move and not realize until it is too late.
+                    ///This could possibly be a message-box if you are really concered.
                     listBox1.Items.Add("This will delete the source path. If you did not intend that please hit Stop Copy");
                     var moveTask = Task.Run(async() =>
                     {
+                        ///Get the total number of files, and their size. Do note this will take a really long time.
+                        ///Which is why I left it off the After6 run, because those are usually very large moves.
+                        ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
+                        ///trying to get the info.
+                        long fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
+                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
+                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label5.Text = "Total files to copy " + fCount;
+                        });
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label4.Text = "Total size to copy " + (sum / 1024f) / 1024f + " MB";
+                        });
+                        ///Note, this only works for sub directories, and will not copy over root contents, the next foreach loop takes care of that.
+                        ///This is allow wrapped in the same task, so it will do the sub first, then the root, and run it both on the same thread.
                         foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
+                            ///I initially did this with a DirectoryInfo and FileInfo, inplace of the style I did now. But this had a weird outcome
+                            ///Where a subdir folder would be created, but the files would be copied to root. Doing it this way works
                             Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
 
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
@@ -230,8 +282,15 @@ namespace FolderMove
                                 {
                                     using (FileStream DestinationStream = File.Create(filename.Replace(@SrcPath.Text, @DestPath.Text)))
                                     {
-
+                                        
+                                        ///To be able to have the cancel token work, I had to put in a buffer size.
+                                        ///Since I didn't see a point in lowering or increasing the buffer size (increasing *might* be better since
+                                        ///we are doing large moves, and it would process files quicker, but at the cost of CPU)
+                                        ///I just kept the default value.
                                         await SourceStream.CopyToAsync(DestinationStream, 81920, token);
+                                        ///No matter if I put the source or the destination, it would not display the name of the file being moved, but instead
+                                        ///The file that just finished. So I had to put this "Finished Moving"
+                                        ///TODO: Possibly put in a progress percentage, hence the progress<T> in button press
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.Items.Add("Finished Moving  " + SourceStream.Name);
@@ -253,6 +312,7 @@ namespace FolderMove
                                     await SourceStream.CopyToAsync(DestinationStream, 81920, token);
                                     this.Invoke((MethodInvoker)delegate
                                     {
+                                        listBox1.TopIndex = listBox1.Items.Count - 1;
                                         listBox1.Items.Add("Finsihed Moving  " + SourceStream.Name);
                                     });
                                     token.ThrowIfCancellationRequested();
@@ -277,11 +337,13 @@ namespace FolderMove
                         }
                     }
                     listBox1.Items.Add("**********File Move has Completed!*****");
+                    listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
                 }
                 catch (OperationCanceledException)
                 {
                     listBox1.Items.Add("Cancelled.");
+                    listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
                 }
             }
@@ -291,6 +353,18 @@ namespace FolderMove
                 {
                     var t = Task.Run(async() =>
                     {
+                        
+                        long fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
+                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
+                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label5.Text = "Total files to copy " + fCount;
+                        });
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label4.Text = "Total size to copy " + (sum/1024f)/1024f + " MB";
+                        });
                         foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
@@ -301,10 +375,10 @@ namespace FolderMove
                                 {
                                     using (FileStream DestinationStream = File.Create(filename.Replace(@SrcPath.Text, @DestPath.Text)))
                                     {
-
                                         await SourceStream.CopyToAsync(DestinationStream, 81920, token);
                                         this.Invoke((MethodInvoker)delegate
                                         {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Finished Copying  " + DestinationStream.Name);
                                         });
                                         token.ThrowIfCancellationRequested();
@@ -324,6 +398,7 @@ namespace FolderMove
                                     await SourceStream.CopyToAsync(DestinationStream, 81920, token);
                                     this.Invoke((MethodInvoker)delegate
                                     {
+                                        listBox1.TopIndex = listBox1.Items.Count - 1;
                                         listBox1.Items.Add("Finished Copying  " + SourceStream.Name);
                                     });
                                     token.ThrowIfCancellationRequested();
@@ -334,17 +409,19 @@ namespace FolderMove
                     });
                     await t;
                     listBox1.Items.Add("**********File Copy has completed!*****");
+                    listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
                        
                 }
                 catch (OperationCanceledException)
                 {
                     listBox1.Items.Add("Cancelled.");
+                    listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
                 }
             }
         }
-        public async Task RunCopyorMoveAfterSeven(PauseToken pausetoken, CancellationToken cancelToken)
+        public async Task RunCopyorMoveAfterSeven(PauseToken pausetoken, CancellationToken cancelToken, IProgress<int> progress)
         {
 
             string StartDirectory = @SrcPath.Text;
@@ -372,6 +449,7 @@ namespace FolderMove
                                         await SourceStream.CopyToAsync(DestinationStream, 81920, cancelToken);
                                         this.Invoke((MethodInvoker)delegate
                                         {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Finished Moving  " + SourceStream.Name);
                                         });
                                         cancelToken.ThrowIfCancellationRequested();
@@ -392,6 +470,7 @@ namespace FolderMove
                                     await SourceStream.CopyToAsync(DestinationStream, 81920, cancelToken);
                                     this.Invoke((MethodInvoker)delegate
                                     {
+                                        listBox1.TopIndex = listBox1.Items.Count - 1;
                                         listBox1.Items.Add("Finished Moving  " + SourceStream.Name);
                                     });
                                     cancelToken.ThrowIfCancellationRequested();
@@ -417,6 +496,7 @@ namespace FolderMove
                         }
                     }
                     listBox1.Items.Add("**********File Move has Completed!*****");
+                    listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
                        
 
@@ -449,6 +529,7 @@ namespace FolderMove
                                         await SourceStream.CopyToAsync(DestinationStream, 81920, cancelToken);
                                         this.Invoke((MethodInvoker)delegate
                                         {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Finished Copying  " + SourceStream.Name);
                                         });
                                         cancelToken.ThrowIfCancellationRequested();
@@ -468,6 +549,7 @@ namespace FolderMove
                                     await SourceStream.CopyToAsync(DestinationStream, 81920, cancelToken);
                                     this.Invoke((MethodInvoker)delegate
                                     {
+                                        listBox1.TopIndex = listBox1.Items.Count - 1;
                                         listBox1.Items.Add("Finished Copying  " + SourceStream.Name);
                                     });
                                     cancelToken.ThrowIfCancellationRequested();
@@ -477,12 +559,14 @@ namespace FolderMove
                     });
                     await moveTask;
                     listBox1.Items.Add("**********File Move has Completed!*****");
+                    listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
                 }
                     
                 catch (OperationCanceledException)
                 {
                     listBox1.Items.Add("Cancelled.");
+                    listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
                 }
 

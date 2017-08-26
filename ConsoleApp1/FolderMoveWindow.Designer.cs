@@ -32,7 +32,6 @@ namespace FolderMove
             this.components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FolderMoveWindow));
             this.listBox1 = new System.Windows.Forms.ListBox();
-            this.exitBtn = new System.Windows.Forms.Button();
             this.StartBtn = new System.Windows.Forms.Button();
             this.StopBtn = new System.Windows.Forms.Button();
             this.label1 = new System.Windows.Forms.Label();
@@ -45,6 +44,8 @@ namespace FolderMove
             this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             this.timer1 = new System.Windows.Forms.Timer(this.components);
             this.timer2 = new System.Windows.Forms.Timer(this.components);
+            this.label4 = new System.Windows.Forms.Label();
+            this.label5 = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // listBox1
@@ -54,16 +55,6 @@ namespace FolderMove
             this.listBox1.Name = "listBox1";
             this.listBox1.Size = new System.Drawing.Size(870, 108);
             this.listBox1.TabIndex = 0;
-            // 
-            // exitBtn
-            // 
-            this.exitBtn.Location = new System.Drawing.Point(808, 271);
-            this.exitBtn.Name = "exitBtn";
-            this.exitBtn.Size = new System.Drawing.Size(75, 23);
-            this.exitBtn.TabIndex = 1;
-            this.exitBtn.Text = "Exit";
-            this.exitBtn.UseVisualStyleBackColor = true;
-            this.exitBtn.Click += new System.EventHandler(this.ExitBtn_Click);
             // 
             // StartBtn
             // 
@@ -148,12 +139,30 @@ namespace FolderMove
             this.checkBox2.Text = "Move (Instead of Copy)";
             this.checkBox2.UseVisualStyleBackColor = true;
             // 
+            // label4
+            // 
+            this.label4.AutoSize = true;
+            this.label4.Location = new System.Drawing.Point(10, 282);
+            this.label4.Name = "label4";
+            this.label4.Size = new System.Drawing.Size(0, 13);
+            this.label4.TabIndex = 12;
+            // 
+            // label5
+            // 
+            this.label5.AutoSize = true;
+            this.label5.Location = new System.Drawing.Point(10, 269);
+            this.label5.Name = "label5";
+            this.label5.Size = new System.Drawing.Size(0, 13);
+            this.label5.TabIndex = 13;
+            // 
             // FolderMoveWindow
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
             this.ClientSize = new System.Drawing.Size(913, 304);
+            this.Controls.Add(this.label5);
+            this.Controls.Add(this.label4);
             this.Controls.Add(this.checkBox2);
             this.Controls.Add(this.checkBox1);
             this.Controls.Add(this.label3);
@@ -163,7 +172,6 @@ namespace FolderMove
             this.Controls.Add(this.label1);
             this.Controls.Add(this.StopBtn);
             this.Controls.Add(this.StartBtn);
-            this.Controls.Add(this.exitBtn);
             this.Controls.Add(this.listBox1);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "FolderMoveWindow";
@@ -174,7 +182,6 @@ namespace FolderMove
         }
 
         #endregion
-        private System.Windows.Forms.Button exitBtn;
         public System.Windows.Forms.Button StartBtn;
         private System.Windows.Forms.Button StopBtn;
         private System.Windows.Forms.Label label1;
@@ -188,5 +195,7 @@ namespace FolderMove
         private CheckBox checkBox1;
         private Timer timer1;
         private Timer timer2;
+        private Label label4;
+        private Label label5;
     }
 }
