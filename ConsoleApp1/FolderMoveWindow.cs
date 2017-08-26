@@ -293,6 +293,7 @@ namespace FolderMove
                                         ///TODO: Possibly put in a progress percentage, hence the progress<T> in button press
                                         this.Invoke((MethodInvoker)delegate
                                         {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Finished Moving  " + SourceStream.Name);
                                         });
                                         token.ThrowIfCancellationRequested();
