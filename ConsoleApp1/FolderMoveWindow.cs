@@ -6,6 +6,7 @@ using System.IO;
 using System.Timers;
 using System.ComponentModel;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace FolderMove
 
@@ -90,7 +91,8 @@ namespace FolderMove
 
             var progress = new Progress<int>(percent =>
             {
-                listBox1.Items.Add(percent + "%");
+                ///label6.Text = percent + "%";
+                ///label6.Refresh();
             });
 
             timer1.Tick += new EventHandler(Timer1_Tick);
@@ -158,7 +160,8 @@ namespace FolderMove
 
             var progress = new Progress<int>(percent =>
             {
-                listBox1.Items.Add(percent + "%");
+                ///label6.Text = percent + "%";
+                ///label6.Refresh();
             });
 
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
@@ -288,6 +291,7 @@ namespace FolderMove
                                         ///we are doing large moves, and it would process files quicker, but at the cost of CPU)
                                         ///I just kept the default value.
                                         await SourceStream.CopyToAsync(DestinationStream, 81920, token);
+                                        
                                         ///No matter if I put the source or the destination, it would not display the name of the file being moved, but instead
                                         ///The file that just finished. So I had to put this "Finished Moving"
                                         ///TODO: Possibly put in a progress percentage, hence the progress<T> in button press
@@ -354,7 +358,7 @@ namespace FolderMove
                 {
                     var t = Task.Run(async() =>
                     {
-                        
+
                         long fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
                         var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
                         long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
@@ -366,6 +370,13 @@ namespace FolderMove
                         {
                             label4.Text = "Total size to copy " + (sum/1024f)/1024f + " MB";
                         });
+
+                        DirectoryInfo source = new DirectoryInfo(StartDirectory);
+                        DirectoryInfo destination = new DirectoryInfo(EndDirectory);
+
+                        
+
+
                         foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
@@ -377,6 +388,7 @@ namespace FolderMove
                                     using (FileStream DestinationStream = File.Create(filename.Replace(@SrcPath.Text, @DestPath.Text)))
                                     {
                                         await SourceStream.CopyToAsync(DestinationStream, 81920, token);
+                       
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -395,7 +407,7 @@ namespace FolderMove
                             {
                                 using (FileStream DestinationStream = File.Create(EndDirectory + filename.Substring(filename.LastIndexOf('\\'))))
                                 {
-
+                                    
                                     await SourceStream.CopyToAsync(DestinationStream, 81920, token);
                                     this.Invoke((MethodInvoker)delegate
                                     {
@@ -573,6 +585,7 @@ namespace FolderMove
 
             }
         }
+    
     }
 }   
       
