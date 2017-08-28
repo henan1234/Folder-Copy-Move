@@ -41,7 +41,6 @@ namespace FolderMove
             this.label3 = new System.Windows.Forms.Label();
             this.checkBox1 = new System.Windows.Forms.CheckBox();
             this.checkBox2 = new System.Windows.Forms.CheckBox();
-            this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             this.timer1 = new System.Windows.Forms.Timer(this.components);
             this.timer2 = new System.Windows.Forms.Timer(this.components);
             this.label4 = new System.Windows.Forms.Label();
@@ -197,7 +196,6 @@ namespace FolderMove
         private System.Windows.Forms.Label label3;
         public ListBox listBox1;
         internal CheckBox checkBox2;
-        public System.ComponentModel.BackgroundWorker backgroundWorker1;
         public TextBox SrcPath;
         public TextBox DestPath;
         private CheckBox checkBox1;
