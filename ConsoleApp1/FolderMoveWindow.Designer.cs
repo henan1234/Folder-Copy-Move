@@ -46,6 +46,8 @@ namespace FolderMove
             this.label4 = new System.Windows.Forms.Label();
             this.label5 = new System.Windows.Forms.Label();
             this.label6 = new System.Windows.Forms.Label();
+            this.SrcButton = new System.Windows.Forms.Button();
+            this.DestButton = new System.Windows.Forms.Button();
             this.SuspendLayout();
             // 
             // listBox1
@@ -94,7 +96,7 @@ namespace FolderMove
             // 
             // DestPath
             // 
-            this.DestPath.Location = new System.Drawing.Point(562, 66);
+            this.DestPath.Location = new System.Drawing.Point(523, 63);
             this.DestPath.Name = "DestPath";
             this.DestPath.Size = new System.Drawing.Size(321, 20);
             this.DestPath.TabIndex = 6;
@@ -161,12 +163,34 @@ namespace FolderMove
             this.label6.Size = new System.Drawing.Size(0, 13);
             this.label6.TabIndex = 14;
             // 
+            // SrcButton
+            // 
+            this.SrcButton.Location = new System.Drawing.Point(321, 59);
+            this.SrcButton.Name = "SrcButton";
+            this.SrcButton.Size = new System.Drawing.Size(30, 23);
+            this.SrcButton.TabIndex = 15;
+            this.SrcButton.Text = "....";
+            this.SrcButton.UseVisualStyleBackColor = true;
+            this.SrcButton.Click += new System.EventHandler(this.SrcButton_Click);
+            // 
+            // DestButton
+            // 
+            this.DestButton.Location = new System.Drawing.Point(850, 63);
+            this.DestButton.Name = "DestButton";
+            this.DestButton.Size = new System.Drawing.Size(30, 23);
+            this.DestButton.TabIndex = 16;
+            this.DestButton.Text = "....";
+            this.DestButton.UseVisualStyleBackColor = true;
+            this.DestButton.Click += new System.EventHandler(this.button2_Click);
+            // 
             // FolderMoveWindow
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
             this.ClientSize = new System.Drawing.Size(913, 304);
+            this.Controls.Add(this.DestButton);
+            this.Controls.Add(this.SrcButton);
             this.Controls.Add(this.label6);
             this.Controls.Add(this.label5);
             this.Controls.Add(this.label4);
@@ -204,5 +228,7 @@ namespace FolderMove
         private Label label4;
         private Label label5;
         private Label label6;
+        private Button SrcButton;
+        private Button DestButton;
     }
 }

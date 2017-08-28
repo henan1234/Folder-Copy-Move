@@ -7,6 +7,7 @@ using System.Timers;
 using System.ComponentModel;
 using System.Linq;
 using System.Collections.Generic;
+using Ookii.Dialogs;
 
 namespace FolderMove
 
@@ -585,7 +586,28 @@ namespace FolderMove
 
             }
         }
-    
+
+        private void SrcButton_Click(object sender, EventArgs e)
+        {
+            using (Ookii.Dialogs.VistaFolderBrowserDialog browserDialog = new Ookii.Dialogs.VistaFolderBrowserDialog())
+            {
+                if (browserDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                {
+                    SrcPath.Text = browserDialog.SelectedPath;
+                }
+            }
+                
+        }
+        private void button2_Click(object sender, EventArgs e)
+        {
+            using (Ookii.Dialogs.VistaFolderBrowserDialog browserDialog = new Ookii.Dialogs.VistaFolderBrowserDialog())
+            {
+                if (browserDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                {
+                    DestPath.Text = browserDialog.SelectedPath;
+                }
+            }
+        }
     }
 }   
       
