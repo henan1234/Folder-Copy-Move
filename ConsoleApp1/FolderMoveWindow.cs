@@ -55,7 +55,7 @@ namespace FolderMove
             DateTime dt = DateTime.Today.Add(targetTime);
             if (DateTime.Now > dt)
             {
-                dt = dt.AddSeconds(45);
+                dt = dt.AddDays(1);
             }
             return dt.Subtract(DateTime.Now).TotalMilliseconds;
         }
@@ -68,10 +68,7 @@ namespace FolderMove
         private double MilliSecondsToNextPauseTime(TimeSpan pauseTime)
         {
             DateTime dt = DateTime.Today.Add(pauseTime);
-            if (DateTime.Now > dt)
-            {
-                dt = dt.AddSeconds(15);
-            }
+           
             return (dt).Subtract(DateTime.Now).TotalMilliseconds;
         }
         /// <summary>
