@@ -90,11 +90,7 @@ namespace FolderMove
             _pts = new PauseTokenSource();
             var pausetoken = _pts.Token;
 
-            var progress = new Progress<int>(percent =>
-            {
-                ///label6.Text = percent + "%";
-                ///label6.Refresh();
-            });
+            progressBar1.Value = 0;
 
             timer1.Tick += new EventHandler(Timer1_Tick);
             timer2.Tick += new EventHandler(Timer2_Tick);
@@ -123,7 +119,7 @@ namespace FolderMove
                     PauseBtn_Click();
                     PrepareControlForStart();
                     listBox1.Items.Add("**********File Copy has Started!*****");
-                    await RunCopyorMoveAfterSeven(_pts.Token, _cts.Token, progress);
+                    await RunCopyorMoveAfterSeven(_pts.Token, _cts.Token);
                     timer2.Interval = (int)MilliSecondsToNextPauseTime(PauseTime);
                     timer2.Start();
                 }
@@ -136,14 +132,14 @@ namespace FolderMove
                 listBox1.Items.Add("**********File Move has Started!*****");
                 listBox1.Items.Add("This will delete the source path. If you did not intend that please hit Stop Copy");
                 PrepareControlForStart();
-                RunCopyorMove(progress);
+                RunCopyorMove();
             }
             /// If no option selected it runs now, and does a copy
             if (!checkBox1.Checked && (!checkBox2.Checked))
             {
                 listBox1.Items.Add("**********File Copy has Started!*****");
                 PrepareControlForStart();
-                RunCopyorMove(progress);
+                RunCopyorMove();
 
             }
         }
@@ -159,15 +155,11 @@ namespace FolderMove
 
             PauseBtn_Click();
 
-            var progress = new Progress<int>(percent =>
-            {
-                ///label6.Text = percent + "%";
-                ///label6.Refresh();
-            });
+            
 
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
             ///I am not worried about this not being awaited, because I do actually want the timer2 to start before the execution of the move/copy finishes
-            RunCopyorMoveAfterSeven(_pts.Token, _cts.Token, progress);
+            RunCopyorMoveAfterSeven(_pts.Token, _cts.Token);
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
 
             timer2.Interval = (int)MilliSecondsToNextPauseTime(PauseTime);
@@ -241,7 +233,7 @@ namespace FolderMove
         /// But this would allow for easier use for end users, and in the end I wanted my app to be able to do both;
         /// Be a timer move/copy and a standard move/copy, so we can call a single app up to do multiple things.
         /// </summary>
-        public async void RunCopyorMove(IProgress<int> progress)
+        public async void RunCopyorMove()
         {
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
@@ -284,15 +276,24 @@ namespace FolderMove
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open))
                                 {
-                                    using (FileStream DestinationStream = File.Create(filename.Replace(@SrcPath.Text, @DestPath.Text)))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate))
                                     {
-                                        
-                                        ///To be able to have the cancel token work, I had to put in a buffer size.
-                                        ///Since I didn't see a point in lowering or increasing the buffer size (increasing *might* be better since
-                                        ///we are doing large moves, and it would process files quicker, but at the cost of CPU)
-                                        ///I just kept the default value.
-                                        await SourceStream.CopyToAsync(DestinationStream, 81920, token);
-                                        
+
+                                        ///This is 2 fold. First I want it to not overwrite an existing file
+                                        ///I also wanted to have a larger buffer so on the next pass after a cancel
+                                        ///(The process will back over the files and in the end change the modify date)
+                                        ///It will process a lot quicker. In my test a 25 second copy is then started back up
+                                        ///After a cancel and working within 4 seconds.
+                                        if (!File.Exists(DestPath.Text))
+                                        {
+                                            this.Invoke((MethodInvoker)delegate
+                                            {
+                                                listBox1.TopIndex = listBox1.Items.Count - 1;
+                                                listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                            });
+                                            await SourceStream.CopyToAsync(DestinationStream, 262144, token);
+                                        }
+
                                         ///No matter if I put the source or the destination, it would not display the name of the file being moved, but instead
                                         ///The file that just finished. So I had to put this "Finished Moving"
                                         ///TODO: Possibly put in a progress percentage, hence the progress<T> in button press
@@ -312,10 +313,19 @@ namespace FolderMove
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open))
                             {
-                                using (FileStream DestinationStream = File.Create(EndDirectory + filename.Substring(filename.LastIndexOf('\\'))))
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate))
                                 {
 
-                                    await SourceStream.CopyToAsync(DestinationStream, 81920, token);
+                                    if (!File.Exists(DestPath.Text))
+                                    {
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
+                                            listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                        });
+                                        await SourceStream.CopyToAsync(DestinationStream, 262144, token);
+                                    }
+
                                     this.Invoke((MethodInvoker)delegate
                                     {
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -357,59 +367,93 @@ namespace FolderMove
             {
                 try
                 {
-                    var t = Task.Run(async() =>
+                    var t = Task.Run(async () =>
                     {
 
-                        long fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
-                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label5.Text = "Total files to copy " + fCount;
-                        });
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label4.Text = "Total size to copy " + (sum/1024f)/1024f + " MB";
-                        });
+                    int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
+                    var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
+                    long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        label5.Text = "Total files to copy " + fCount;
+                    });
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        label4.Text = "Total size to copy " + (sum / 1024f) / 1024f + " MB";
+                    });
 
-                        DirectoryInfo source = new DirectoryInfo(StartDirectory);
-                        DirectoryInfo destination = new DirectoryInfo(EndDirectory);
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        progressBar1.Maximum = fCount;
+                    });
 
-                        
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        progressBar1.Step = 1;
+                    });
 
 
-                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
-                        {
-                            Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
+                    DirectoryInfo source = new DirectoryInfo(StartDirectory);
+                    DirectoryInfo destination = new DirectoryInfo(EndDirectory);
 
-                            foreach (string filename in Directory.EnumerateFiles(dirPath))
-                            {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
-                                {
-                                    using (FileStream DestinationStream = File.Create(filename.Replace(@SrcPath.Text, @DestPath.Text)))
-                                    {
-                                        await SourceStream.CopyToAsync(DestinationStream, 81920, token);
-                       
-                                        this.Invoke((MethodInvoker)delegate
-                                        {
-                                            listBox1.TopIndex = listBox1.Items.Count - 1;
-                                            listBox1.Items.Add("Finished Copying  " + DestinationStream.Name);
-                                        });
-                                        token.ThrowIfCancellationRequested();
+                    foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                    {
+                        Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
 
-                                    }
-
-                                }
-                            }
-                        }
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        foreach (string filename in Directory.EnumerateFiles(dirPath))
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open))
                             {
-                                using (FileStream DestinationStream = File.Create(EndDirectory + filename.Substring(filename.LastIndexOf('\\'))))
+                                using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate))
                                 {
-                                    
-                                    await SourceStream.CopyToAsync(DestinationStream, 81920, token);
+
+                                    if (!File.Exists(DestPath.Text))
+                                    {
+                                            this.Invoke((MethodInvoker)delegate
+                                            {
+                                                listBox1.TopIndex = listBox1.Items.Count - 1;
+                                                listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                            });
+                                            await SourceStream.CopyToAsync(DestinationStream, 262144, token);
+                                    }
+
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.PerformStep();
+                                    });
+
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        listBox1.TopIndex = listBox1.Items.Count - 1;
+                                        listBox1.Items.Add("Finished Copying  " + DestinationStream.Name);
+                                    });
+                                    token.ThrowIfCancellationRequested();
+
+                                }
+
+                            }
+                        }
+                    }
+                    foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                    {
+                        using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                        {
+                            using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate))
+                            {
+                                if (!File.Exists(DestPath.Text))
+                                {
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
+                                            listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                        });
+                                        await SourceStream.CopyToAsync(DestinationStream, 262144, token);
+                                }
+
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.PerformStep();
+                                    });
                                     this.Invoke((MethodInvoker)delegate
                                     {
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -435,7 +479,7 @@ namespace FolderMove
                 }
             }
         }
-        public async Task RunCopyorMoveAfterSeven(PauseToken pausetoken, CancellationToken cancelToken, IProgress<int> progress)
+        public async Task RunCopyorMoveAfterSeven(PauseToken pausetoken, CancellationToken cancelToken)
         {
 
             string StartDirectory = @SrcPath.Text;
@@ -454,13 +498,21 @@ namespace FolderMove
 
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Append))
                                 {
-                                    using (FileStream DestinationStream = File.Create(filename.Replace(@SrcPath.Text, @DestPath.Text)))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate))
                                     {
 
                                         await pausetoken.WaitWhilePausedAsync();
-                                        await SourceStream.CopyToAsync(DestinationStream, 81920, cancelToken);
+                                        if (!File.Exists(DestPath.Text))
+                                        {
+                                            this.Invoke((MethodInvoker)delegate
+                                            {
+                                                listBox1.TopIndex = listBox1.Items.Count - 1;
+                                                listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                            });
+                                            await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
+                                        }
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -477,11 +529,19 @@ namespace FolderMove
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open))
                             {
-                                using (FileStream DestinationStream = File.Create(EndDirectory + filename.Substring(filename.LastIndexOf('\\'))))
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate))
                                 {
 
                                     await pausetoken.WaitWhilePausedAsync();
-                                    await SourceStream.CopyToAsync(DestinationStream, 81920, cancelToken);
+                                    if (!File.Exists(DestPath.Text))
+                                    {
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
+                                            listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                        });
+                                        await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
+                                    }
                                     this.Invoke((MethodInvoker)delegate
                                     {
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -534,13 +594,21 @@ namespace FolderMove
 
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Append))
                                 {
-                                    using (FileStream DestinationStream = File.Create(filename.Replace(@SrcPath.Text, @DestPath.Text)))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate))
                                     {
 
                                         await pausetoken.WaitWhilePausedAsync();
-                                        await SourceStream.CopyToAsync(DestinationStream, 81920, cancelToken);
+                                        if (!File.Exists(DestPath.Text))
+                                        {
+                                            this.Invoke((MethodInvoker)delegate
+                                            {
+                                                listBox1.TopIndex = listBox1.Items.Count - 1;
+                                                listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                            });
+                                            await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
+                                        }
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -556,11 +624,19 @@ namespace FolderMove
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open))
                             {
-                                using (FileStream DestinationStream = File.Create(EndDirectory + filename.Substring(filename.LastIndexOf('\\'))))
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate))
                                 {
 
                                     await pausetoken.WaitWhilePausedAsync();
-                                    await SourceStream.CopyToAsync(DestinationStream, 81920, cancelToken);
+                                    if (!File.Exists(DestPath.Text))
+                                    {
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
+                                            listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                        });
+                                        await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
+                                    }
                                     this.Invoke((MethodInvoker)delegate
                                     {
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -598,7 +674,7 @@ namespace FolderMove
             }
                 
         }
-        private void button2_Click(object sender, EventArgs e)
+        private void DestButton_Click(object sender, EventArgs e)
         {
             using (Ookii.Dialogs.VistaFolderBrowserDialog browserDialog = new Ookii.Dialogs.VistaFolderBrowserDialog())
             {

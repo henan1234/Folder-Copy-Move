@@ -48,6 +48,7 @@ namespace FolderMove
             this.label6 = new System.Windows.Forms.Label();
             this.SrcButton = new System.Windows.Forms.Button();
             this.DestButton = new System.Windows.Forms.Button();
+            this.progressBar1 = new System.Windows.Forms.ProgressBar();
             this.SuspendLayout();
             // 
             // listBox1
@@ -181,7 +182,15 @@ namespace FolderMove
             this.DestButton.TabIndex = 16;
             this.DestButton.Text = "....";
             this.DestButton.UseVisualStyleBackColor = true;
-            this.DestButton.Click += new System.EventHandler(this.button2_Click);
+            this.DestButton.Click += new System.EventHandler(this.DestButton_Click);
+            // 
+            // progressBar1
+            // 
+            this.progressBar1.Location = new System.Drawing.Point(358, 63);
+            this.progressBar1.Name = "progressBar1";
+            this.progressBar1.Size = new System.Drawing.Size(159, 23);
+            this.progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+            this.progressBar1.TabIndex = 17;
             // 
             // FolderMoveWindow
             // 
@@ -189,6 +198,7 @@ namespace FolderMove
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
             this.ClientSize = new System.Drawing.Size(913, 304);
+            this.Controls.Add(this.progressBar1);
             this.Controls.Add(this.DestButton);
             this.Controls.Add(this.SrcButton);
             this.Controls.Add(this.label6);
@@ -230,5 +240,6 @@ namespace FolderMove
         private Label label6;
         private Button SrcButton;
         private Button DestButton;
+        private ProgressBar progressBar1;
     }
 }
