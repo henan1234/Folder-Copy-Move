@@ -88,6 +88,7 @@ namespace FolderMove
             var pausetoken = _pts.Token;
 
             progressBar1.Value = 0;
+            progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Marquee;
 
             timer1.Tick += new EventHandler(Timer1_Tick);
             timer2.Tick += new EventHandler(Timer2_Tick);
@@ -152,8 +153,6 @@ namespace FolderMove
 
             PauseBtn_Click();
 
-            
-
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
             ///I am not worried about this not being awaited, because I do actually want the timer2 to start before the execution of the move/copy finishes
             RunCopyorMoveAfterSeven(_pts.Token, _cts.Token);
@@ -210,6 +209,8 @@ namespace FolderMove
 
             listBox1.Items.Add("**********File Copy has Stopped!*****");
 
+            progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+
         }
         /// <summary>
         /// This Async pause does work really well, just have to have methods that will actually take it as token, like cancel token.
@@ -250,17 +251,28 @@ namespace FolderMove
                         ///Which is why I left it off the After6 run, because those are usually very large moves.
                         ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
                         ///trying to get the info.
-                        long fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
+                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
                         var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
                         long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
                         this.Invoke((MethodInvoker)delegate
                         {
-                            label5.Text = "Total files to copy " + fCount;
+                            label5.Text = "Total files to move " + fCount;
                         });
                         this.Invoke((MethodInvoker)delegate
                         {
-                            label4.Text = "Total size to copy " + (sum / 1024f) / 1024f + " MB";
+                            label4.Text = "Total size to move " + (sum / 1024f) / 1024f + " MB";
                         });
+
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            progressBar1.Maximum = fCount;
+                        });
+
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            progressBar1.Step = 1;
+                        });
+
                         ///Note, this only works for sub directories, and will not copy over root contents, the next foreach loop takes care of that.
                         ///This is allow wrapped in the same task, so it will do the sub first, then the root, and run it both on the same thread.
                         foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
@@ -286,11 +298,20 @@ namespace FolderMove
                                             this.Invoke((MethodInvoker)delegate
                                             {
                                                 listBox1.TopIndex = listBox1.Items.Count - 1;
-                                                listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                                listBox1.Items.Add("Starting Move of  " + SourceStream.Name);
                                             });
                                             await SourceStream.CopyToAsync(DestinationStream, 262144, token);
+                                            
                                         }
 
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                        });
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            progressBar1.PerformStep();
+                                        });
                                         ///No matter if I put the source or the destination, it would not display the name of the file being moved, but instead
                                         ///The file that just finished. So I had to put this "Finished Moving"
                                         ///TODO: Possibly put in a progress percentage, hence the progress<T> in button press
@@ -318,15 +339,24 @@ namespace FolderMove
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
-                                            listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                            listBox1.Items.Add("Starting Move of  " + SourceStream.Name);
                                         });
                                         await SourceStream.CopyToAsync(DestinationStream, 262144, token);
+                                        
                                     }
 
                                     this.Invoke((MethodInvoker)delegate
                                     {
+                                        progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                    });
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.PerformStep();
+                                    });
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
-                                        listBox1.Items.Add("Finsihed Moving  " + SourceStream.Name);
+                                        listBox1.Items.Add("Finished Moving  " + SourceStream.Name);
                                     });
                                     token.ThrowIfCancellationRequested();
 
@@ -335,6 +365,59 @@ namespace FolderMove
                         }
                     });
                     await moveTask;
+
+                    var modify = Task.Run(() =>
+                    {
+                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        {
+                            using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                            {
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                {
+                                    DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                    DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                    DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                    File.SetCreationTime(DestinationStream.Name, dt);
+                                    File.SetLastAccessTime(DestinationStream.Name, at);
+                                    File.SetLastWriteTime(DestinationStream.Name, wt);
+                                }
+                            }
+                        }
+                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        {
+                            foreach (string filename in Directory.EnumerateFiles(dirPath))
+                            {
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                {
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    {
+                                        DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                        DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                        DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                        File.SetCreationTime(DestinationStream.Name, dt);
+                                        File.SetLastAccessTime(DestinationStream.Name, at);
+                                        File.SetLastWriteTime(DestinationStream.Name, wt);
+                                    }
+                                }
+                            }
+
+
+                        }
+                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        {
+                            foreach (string dirPathEnd in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
+                            {
+                                DateTime dirt = Directory.GetCreationTime(dirPath);
+                                DateTime dira = Directory.GetLastAccessTime(dirPath);
+                                DateTime dirw = Directory.GetLastWriteTime(dirPath);
+                                Directory.SetCreationTime(dirPathEnd, dirt);
+                                Directory.SetLastAccessTime(dirPathEnd, dira);
+                                Directory.SetLastWriteTime(dirPathEnd, dirw);
+
+                            }
+                        }
+                    });
+
                     if (System.IO.Directory.Exists(SrcPath.Text))
                     {
                         try
@@ -357,6 +440,12 @@ namespace FolderMove
                 {
                     listBox1.Items.Add("Cancelled.");
                     listBox1.TopIndex = listBox1.Items.Count - 1;
+                    progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                    PrepareControlsForCancel();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message);
                     PrepareControlsForCancel();
                 }
             }
@@ -389,10 +478,6 @@ namespace FolderMove
                         progressBar1.Step = 1;
                     });
 
-
-                    DirectoryInfo source = new DirectoryInfo(StartDirectory);
-                    DirectoryInfo destination = new DirectoryInfo(EndDirectory);
-
                     foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                     {
                         Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
@@ -401,18 +486,24 @@ namespace FolderMove
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open))
                             {
-                                using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate))
+                                using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                 {
 
                                     if (!File.Exists(DestPath.Text))
                                     {
-                                            this.Invoke((MethodInvoker)delegate
-                                            {
-                                                listBox1.TopIndex = listBox1.Items.Count - 1;
-                                                listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
-                                            });
-                                            await SourceStream.CopyToAsync(DestinationStream, 262144, token);
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
+                                            listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                        });
+                                        await SourceStream.CopyToAsync(DestinationStream, 262144, token);
+
                                     }
+
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                    });
 
                                     this.Invoke((MethodInvoker)delegate
                                     {
@@ -433,20 +524,25 @@ namespace FolderMove
                     }
                     foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
                     {
-                        using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                        using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                         {
-                            using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate))
+                            using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                             {
-                                if (!File.Exists(DestPath.Text))
-                                {
+                                    if (!File.Exists(DestPath.Text))
+                                    {
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
                                         });
+                                        
                                         await SourceStream.CopyToAsync(DestinationStream, 262144, token);
-                                }
+                                    }
 
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                    });
                                     this.Invoke((MethodInvoker)delegate
                                     {
                                         progressBar1.PerformStep();
@@ -458,11 +554,64 @@ namespace FolderMove
                                     });
                                     token.ThrowIfCancellationRequested();
 
-                                }
+                                    }
                             }
                         }
                     });
                     await t;
+                    var modify = Task.Run(() =>
+                    {
+                       foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                       {
+                           using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                           {
+                               using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                               {
+                                   DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                   DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                   DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                   File.SetCreationTime(DestinationStream.Name, dt);
+                                   File.SetLastAccessTime(DestinationStream.Name, at);
+                                   File.SetLastWriteTime(DestinationStream.Name, wt);
+                               }
+                           }
+                       }
+                       foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                       {
+                            foreach (string filename in Directory.EnumerateFiles(dirPath))
+                            {
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                {
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    {
+                                        DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                        DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                        DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                        File.SetCreationTime(DestinationStream.Name, dt);
+                                        File.SetLastAccessTime(DestinationStream.Name, at);
+                                        File.SetLastWriteTime(DestinationStream.Name, wt);
+                                    }
+                                }
+                            }
+                           
+                           
+                       }
+                       foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                       {
+                            foreach (string dirPathEnd in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
+                            {
+                                DateTime dirt = Directory.GetCreationTime(dirPath);
+                                DateTime dira = Directory.GetLastAccessTime(dirPath);
+                                DateTime dirw = Directory.GetLastWriteTime(dirPath);
+                                Directory.SetCreationTime(dirPathEnd, dirt);
+                                Directory.SetLastAccessTime(dirPathEnd, dira);
+                                Directory.SetLastWriteTime(dirPathEnd, dirw);
+
+                            }
+                       }
+                    });
+                   
+                    
                     listBox1.Items.Add("**********File Copy has completed!*****");
                     listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
@@ -472,6 +621,12 @@ namespace FolderMove
                 {
                     listBox1.Items.Add("Cancelled.");
                     listBox1.TopIndex = listBox1.Items.Count - 1;
+                    progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                    PrepareControlsForCancel();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message);
                     PrepareControlsForCancel();
                 }
             }
@@ -489,6 +644,28 @@ namespace FolderMove
                     listBox1.Items.Add("This will delete the source path. If you did not intend that please hit Stop Copy");
                     var moveTask = Task.Run(async () =>
                     {
+                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
+                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
+                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label5.Text = "Total files to move " + fCount;
+                        });
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label4.Text = "Total size to move " + (sum / 1024f) / 1024f + " MB";
+                        });
+
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            progressBar1.Maximum = fCount;
+                        });
+
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            progressBar1.Step = 1;
+                        });
+
                         foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
@@ -506,10 +683,19 @@ namespace FolderMove
                                             this.Invoke((MethodInvoker)delegate
                                             {
                                                 listBox1.TopIndex = listBox1.Items.Count - 1;
-                                                listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                                listBox1.Items.Add("Starting Move of  " + SourceStream.Name);
                                             });
                                             await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
                                         }
+
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                        });
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            progressBar1.PerformStep();
+                                        });
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -535,10 +721,19 @@ namespace FolderMove
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
-                                            listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                            listBox1.Items.Add("Starting Move of  " + SourceStream.Name);
                                         });
                                         await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
                                     }
+
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                    });
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.PerformStep();
+                                    });
                                     this.Invoke((MethodInvoker)delegate
                                     {
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -551,6 +746,58 @@ namespace FolderMove
                         }
                     });
                     await moveTask;
+
+                    var modify = Task.Run(() =>
+                    {
+                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        {
+                            using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                            {
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                {
+                                    DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                    DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                    DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                    File.SetCreationTime(DestinationStream.Name, dt);
+                                    File.SetLastAccessTime(DestinationStream.Name, at);
+                                    File.SetLastWriteTime(DestinationStream.Name, wt);
+                                }
+                            }
+                        }
+                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        {
+                            foreach (string filename in Directory.EnumerateFiles(dirPath))
+                            {
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                {
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    {
+                                        DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                        DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                        DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                        File.SetCreationTime(DestinationStream.Name, dt);
+                                        File.SetLastAccessTime(DestinationStream.Name, at);
+                                        File.SetLastWriteTime(DestinationStream.Name, wt);
+                                    }
+                                }
+                            }
+
+
+                        }
+                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        {
+                            foreach (string dirPathEnd in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
+                            {
+                                DateTime dirt = Directory.GetCreationTime(dirPath);
+                                DateTime dira = Directory.GetLastAccessTime(dirPath);
+                                DateTime dirw = Directory.GetLastWriteTime(dirPath);
+                                Directory.SetCreationTime(dirPathEnd, dirt);
+                                Directory.SetLastAccessTime(dirPathEnd, dira);
+                                Directory.SetLastWriteTime(dirPathEnd, dirw);
+
+                            }
+                        }
+                    });
 
                     if (System.IO.Directory.Exists(SrcPath.Text))
                     {
@@ -571,20 +818,48 @@ namespace FolderMove
                     PrepareControlsForCancel();
                        
 
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        listBox1.Items.Add("Cancelled.");
-                        PrepareControlsForCancel();
-                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    listBox1.Items.Add("Cancelled.");
+                    listBox1.TopIndex = listBox1.Items.Count - 1;
+                    progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                    PrepareControlsForCancel();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message);
+                    PrepareControlsForCancel();
+                }
             }
             if (!checkBox2.Checked)
             {
                 try
                 {
                     
-                    var moveTask = Task.Run(async () =>
+                    var copyTask = Task.Run(async () =>
                     {
+                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
+                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
+                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label5.Text = "Total files to copy " + fCount;
+                        });
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label4.Text = "Total size to copy " + (sum / 1024f) / 1024f + " MB";
+                        });
+
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            progressBar1.Maximum = fCount;
+                        });
+
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            progressBar1.Step = 1;
+                        });
                         foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
@@ -606,6 +881,15 @@ namespace FolderMove
                                             });
                                             await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
                                         }
+
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                        });
+                                        this.Invoke((MethodInvoker)delegate
+                                        {
+                                            progressBar1.PerformStep();
+                                        });
                                         this.Invoke((MethodInvoker)delegate
                                         {
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -634,6 +918,15 @@ namespace FolderMove
                                         });
                                         await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
                                     }
+
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                    });
+                                    this.Invoke((MethodInvoker)delegate
+                                    {
+                                        progressBar1.PerformStep();
+                                    });
                                     this.Invoke((MethodInvoker)delegate
                                     {
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
@@ -644,8 +937,61 @@ namespace FolderMove
                             }
                         }
                     });
-                    await moveTask;
-                    listBox1.Items.Add("**********File Move has Completed!*****");
+                    await copyTask;
+
+                    var modify = Task.Run(() =>
+                    {
+                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        {
+                            using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                            {
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                {
+                                    DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                    DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                    DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                    File.SetCreationTime(DestinationStream.Name, dt);
+                                    File.SetLastAccessTime(DestinationStream.Name, at);
+                                    File.SetLastWriteTime(DestinationStream.Name, wt);
+                                }
+                            }
+                        }
+                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        {
+                            foreach (string filename in Directory.EnumerateFiles(dirPath))
+                            {
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                {
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    {
+                                        DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                        DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                        DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                        File.SetCreationTime(DestinationStream.Name, dt);
+                                        File.SetLastAccessTime(DestinationStream.Name, at);
+                                        File.SetLastWriteTime(DestinationStream.Name, wt);
+                                    }
+                                }
+                            }
+
+
+                        }
+                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        {
+                            foreach (string dirPathEnd in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
+                            {
+                                DateTime dirt = Directory.GetCreationTime(dirPath);
+                                DateTime dira = Directory.GetLastAccessTime(dirPath);
+                                DateTime dirw = Directory.GetLastWriteTime(dirPath);
+                                Directory.SetCreationTime(dirPathEnd, dirt);
+                                Directory.SetLastAccessTime(dirPathEnd, dira);
+                                Directory.SetLastWriteTime(dirPathEnd, dirw);
+
+                            }
+                        }
+                    });
+
+                    listBox1.Items.Add("**********File Copy has Completed!*****");
                     listBox1.TopIndex = listBox1.Items.Count - 1;
                     PrepareControlsForCancel();
                 }
@@ -654,6 +1000,12 @@ namespace FolderMove
                 {
                     listBox1.Items.Add("Cancelled.");
                     listBox1.TopIndex = listBox1.Items.Count - 1;
+                    progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                    PrepareControlsForCancel();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message);
                     PrepareControlsForCancel();
                 }
 
