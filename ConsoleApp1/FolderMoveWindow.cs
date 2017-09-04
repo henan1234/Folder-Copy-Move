@@ -517,14 +517,14 @@ namespace FolderMove
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                {
+                                    if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                     {
-                                        if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
-                                        {
-                                            DestinationStream.Close();
-                                            filesSkipped++;
-                                        }
+                                        DestinationStream.Close();
+                                        filesSkipped++;
                                     }
+                                }
                             }
                         }
                     }
@@ -802,7 +802,7 @@ namespace FolderMove
                                         long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
                                         this.Invoke((MethodInvoker)delegate
                                         {
-                                            label6.Text = "Amount Copied  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + fileSkipped;
+                                            label6.Text = "Amount Moved  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + fileSkipped;
                                         });
 
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
@@ -853,7 +853,7 @@ namespace FolderMove
                                     long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
                                     this.Invoke((MethodInvoker)delegate
                                     {
-                                        label6.Text = "Amount Copied  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + fileSkipped;
+                                        label6.Text = "Amount Moved  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + fileSkipped;
                                     });
 
                                     if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
@@ -938,8 +938,8 @@ namespace FolderMove
                     }
                     listBox1.Items.Add("**********File Move has Completed!*****");
                     listBox1.TopIndex = listBox1.Items.Count - 1;
-                    label4.Text = "Total size to copy ";
-                    label5.Text = "Total files to copy ";
+                    label4.Text = "Total size to move ";
+                    label5.Text = "Total files to move ";
                     PrepareControlsForCancel();
                        
 
