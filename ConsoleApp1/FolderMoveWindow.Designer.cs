@@ -49,6 +49,7 @@ namespace FolderMove
             this.SrcButton = new System.Windows.Forms.Button();
             this.DestButton = new System.Windows.Forms.Button();
             this.progressBar1 = new System.Windows.Forms.ProgressBar();
+            this.label7 = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // listBox1
@@ -192,12 +193,21 @@ namespace FolderMove
             this.progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
             this.progressBar1.TabIndex = 17;
             // 
+            // label7
+            // 
+            this.label7.AutoSize = true;
+            this.label7.Location = new System.Drawing.Point(358, 44);
+            this.label7.Name = "label7";
+            this.label7.Size = new System.Drawing.Size(0, 13);
+            this.label7.TabIndex = 18;
+            // 
             // FolderMoveWindow
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
             this.ClientSize = new System.Drawing.Size(913, 304);
+            this.Controls.Add(this.label7);
             this.Controls.Add(this.progressBar1);
             this.Controls.Add(this.DestButton);
             this.Controls.Add(this.SrcButton);
@@ -241,5 +251,6 @@ namespace FolderMove
         private Button SrcButton;
         private Button DestButton;
         private ProgressBar progressBar1;
+        private Label label7;
     }
 }
