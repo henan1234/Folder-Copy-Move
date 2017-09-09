@@ -237,6 +237,10 @@ namespace FolderMove
             string StartDirectory = @SrcPath.Text;
             string EndDirectory = @DestPath.Text;
             int filesSkipped = 0;
+            if (!Directory.Exists(EndDirectory))
+            {
+                Directory.CreateDirectory(EndDirectory);
+            }
             ///Checkbox2 indicates a move, rather than a copy.
             if (checkBox2.Checked)
             {
@@ -245,6 +249,7 @@ namespace FolderMove
                     ///This warning is nice to have so the user does not accidentally do a move and not realize until it is too late.
                     ///This could possibly be a message-box if you are really concered.
                     listBox1.Items.Add("This will delete the source path. If you did not intend that please hit Stop Copy");
+                    
                     var getfiles = Task.Run(() =>
                     {
                         this.Invoke((MethodInvoker)delegate
@@ -287,7 +292,7 @@ namespace FolderMove
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -309,9 +314,9 @@ namespace FolderMove
 
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         ///Check if the length match (since the file is created above)
                                         ///If the length is not right, it restarts the copy (meaning if stopped in the middle of copying it will
@@ -326,6 +331,7 @@ namespace FolderMove
                                                 label7.Text = "";
                                                 listBox1.Items.Add("Starting Move of  " + SourceStream.Name);
                                             });
+                                            
                                             await SourceStream.CopyToAsync(DestinationStream, 262144, token);
                                         }
                                         this.Invoke((MethodInvoker)delegate
@@ -370,7 +376,7 @@ namespace FolderMove
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -384,9 +390,9 @@ namespace FolderMove
 
                         foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
                         {
-                            using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                            using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
-                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate))
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                 {
                                     if (DestinationStream.Length != SourceStream.Length)
                                     {
@@ -452,9 +458,9 @@ namespace FolderMove
                         {
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         DateTime dt = File.GetCreationTime(SourceStream.Name);
                                         DateTime at = File.GetLastAccessTime(SourceStream.Name);
@@ -580,7 +586,7 @@ namespace FolderMove
 
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
                                     using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
@@ -714,9 +720,9 @@ namespace FolderMove
                        {
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         DateTime dt = File.GetCreationTime(SourceStream.Name);
                                         DateTime at = File.GetLastAccessTime(SourceStream.Name);
@@ -772,7 +778,10 @@ namespace FolderMove
             string StartDirectory = @SrcPath.Text;
             string EndDirectory = @DestPath.Text;
             int fileSkipped = 0;
-
+            if (!Directory.Exists(EndDirectory))
+            {
+                Directory.CreateDirectory(EndDirectory);
+            }
             if (checkBox2.Checked)
             {
                 try
@@ -822,7 +831,7 @@ namespace FolderMove
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -840,9 +849,9 @@ namespace FolderMove
 
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         await pausetoken.WaitWhilePausedAsync();
 
@@ -896,7 +905,7 @@ namespace FolderMove
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -910,9 +919,9 @@ namespace FolderMove
 
                         foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
                         {
-                            using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                            using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
-                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate))
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                 {
                                     await pausetoken.WaitWhilePausedAsync();
                                    
@@ -961,7 +970,7 @@ namespace FolderMove
 
                     var modify = Task.Run(() =>
                     {
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        foreach (string filename in Directory.EnumerateFiles(StartDirectory))
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
@@ -980,9 +989,9 @@ namespace FolderMove
                         {
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         DateTime dt = File.GetCreationTime(SourceStream.Name);
                                         DateTime at = File.GetLastAccessTime(SourceStream.Name);
@@ -1091,7 +1100,7 @@ namespace FolderMove
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -1109,9 +1118,9 @@ namespace FolderMove
 
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         await pausetoken.WaitWhilePausedAsync();
 
@@ -1163,7 +1172,7 @@ namespace FolderMove
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -1176,9 +1185,9 @@ namespace FolderMove
                         }
                         foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
                         {
-                            using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                            using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
-                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate))
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                 {
                                     await pausetoken.WaitWhilePausedAsync();
 
@@ -1226,7 +1235,7 @@ namespace FolderMove
 
                     var modify = Task.Run(() =>
                     {
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        foreach (string filename in Directory.EnumerateFiles(StartDirectory))
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
@@ -1245,9 +1254,9 @@ namespace FolderMove
                         {
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
-                                using (FileStream SourceStream = File.Open(filename, FileMode.Open))
+                                using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         DateTime dt = File.GetCreationTime(SourceStream.Name);
                                         DateTime at = File.GetLastAccessTime(SourceStream.Name);
