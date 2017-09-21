@@ -8,6 +8,8 @@ using System.ComponentModel;
 using System.Linq;
 using System.Collections.Generic;
 using Ookii.Dialogs;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace FolderMove
 
@@ -20,12 +22,16 @@ namespace FolderMove
     /// </summary>
     public partial class FolderMoveWindow : Form
     {
-        
+        int files = 0;
+        long sum = 0;
+        //long endsum = 0;
+        //int folders = 0;
         /// <summary>
         /// This tells when to run and when to pause. It runs at 6pm, pauses at 7am
         /// </summary>
         private TimeSpan RunTime = new TimeSpan(18, 0, 0);
         private TimeSpan PauseTime = new TimeSpan(7, 0, 0);
+        Stopwatch sw = new Stopwatch();
         /// <summary>
         /// Initializing and calling global vars.
         /// I also set the progress bar to not enabled so that if you hit exit it will not recongize the progess bar as enabled
@@ -41,6 +47,8 @@ namespace FolderMove
         public CancellationTokenSource _cts = null;
  
         public PauseTokenSource _pts = null;
+
+        
 
         /// <summary>
         /// Getting the time in milliseconds to
@@ -84,6 +92,7 @@ namespace FolderMove
             var token = _cts.Token;
             _pts = new PauseTokenSource();
             var pausetoken = _pts.Token;
+            
 
             progressBar1.Value = 0;
             progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Marquee;
@@ -184,7 +193,8 @@ namespace FolderMove
                 StartBtn.Enabled = false;
                 StopBtn.Enabled = true;
             });
-
+            label4.Text = String.Empty;
+            label7.Text = String.Empty;
 
         }
         internal void PrepareControlsForCancel()
@@ -237,6 +247,9 @@ namespace FolderMove
             string StartDirectory = @SrcPath.Text;
             string EndDirectory = @DestPath.Text;
             int filesSkipped = 0;
+            ///int extraFile = 0;
+            bool isRunning = true;
+            
             if (!Directory.Exists(EndDirectory))
             {
                 Directory.CreateDirectory(EndDirectory);
@@ -249,64 +262,95 @@ namespace FolderMove
                     ///This warning is nice to have so the user does not accidentally do a move and not realize until it is too late.
                     ///This could possibly be a message-box if you are really concered.
                     listBox1.Items.Add("This will delete the source path. If you did not intend that please hit Stop Copy");
-                    
-                    var getfiles = Task.Run(() =>
+                    ///Get the total number of files, and their size. Do note this will take a really long time.
+                    ///Which is why I left it off the After6 run, because those are usually very large moves.
+                    ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
+                    ///trying to get the info.
+                    var amountcopied = Task.Run(() =>
                     {
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label7.Text = "Discovering Items....";
-                        });
-                        ///Get the total number of files, and their size. Do note this will take a really long time.
-                        ///Which is why I left it off the After6 run, because those are usually very large moves.
-                        ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
-                        ///trying to get the info.
-                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
-                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label5.Text = "Total files to move " + fCount;
-                        });
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label4.Text = "Total size to move " + (sum / 1024f) / 1024f + " MB";
-                        });
+                        var existingFiles = Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories);
+                        var existingRoot = Directory.GetFiles(EndDirectory);
 
+                        sum += Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories)
+                                .AsParallel()
+                                .Select(f => new FileInfo(f).Length)
+                                .Sum();
+                        sum += Directory.GetFiles(StartDirectory)
+                                .AsParallel()
+                                .Select(f => new FileInfo(f).Length)
+                                .Sum();
+                        while (isRunning == true)
+                        {
+
+                            long endsum = Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories)
+                                        .Except(existingFiles)
+                                        .Except(existingRoot)
+                                        .AsParallel()
+                                        .Select(f => new FileInfo(f).Length)
+                                        .Sum();
+
+                            endsum += Directory.GetFiles(EndDirectory)
+                                        .Except(existingFiles)
+                                        .Except(existingRoot)
+                                        .AsParallel()
+                                        .Select(f => new FileInfo(f).Length)
+                                        .Sum();
+                            float secelasped = ((float)sw.ElapsedMilliseconds / 1000);
+                            float secleft = (int)Math.Ceiling((secelasped / endsum) * (sum - endsum));
+                            TimeSpan lefttime = TimeSpan.FromSeconds(secleft);
+                            label7.Text = "Percent done " + ((100 * endsum / sum)).ToString() + "%" + " Speed: " + (endsum / 1024d / 1024d / sw.Elapsed.TotalSeconds).ToString("0.00") + " mb/s";
+                            label6.Text = "Amount copied  " + ((endsum / 1024d) / 1024d).ToString("0.00") + "/" + ((sum / 1024d) / 1024d).ToString("0.00") + " MB";
+                            label4.Text = "Files to Copy " + files;
+                            label8.Text = "Time Remaning " + lefttime.ToString();
+
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                progressBar1.Minimum = 0;
+                                progressBar1.Maximum = Convert.ToInt32(sum);
+
+                                progressBar1.Value = Convert.ToInt32(endsum);
+
+
+                            });
+                        }
+                        if (isRunning == false)
+                        {
+                            label7.Text = "";
+                        }
                     });
-                    var moveTask = Task.Run(async() =>
+
+                    var moveTask = Task.Run(async () =>
                     {
-                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-                        this.Invoke((MethodInvoker)delegate
+                        foreach (string dirpath in Directory.EnumerateDirectories(EndDirectory, "*", SearchOption.AllDirectories))
                         {
-                            progressBar1.Maximum = fCount;
-                        });
-
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            progressBar1.Step = 1;
-                        });
-
-                        foreach (string dirpath in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
-                        {
-                            foreach (string filename in Directory.EnumerateFiles(dirpath))
+                            String[] skipfiles = Directory.EnumerateFiles(dirpath).ToArray();
+                            Parallel.ForEach(skipfiles, (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
                                     using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
-                                        if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
+                                        if (DestinationStream.Length == SourceStream.Length & File.Exists(DestinationStream.Name))
                                         {
                                             DestinationStream.Close();
                                             filesSkipped++;
                                         }
                                     }
                                 }
-                            }
+                            });
                         }
+
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label5.Text = "Files Skipped " + filesSkipped;
+
+                        });
+                        sw.Start();
 
                         ///Note, this only works for sub directories, and will not copy over root contents, the next foreach loop takes care of that.
                         ///This is also wrapped in the same task, so it will do the sub first, then the root, and run it both on the same thread.
-                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        foreach (string dirPath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             ///I initially did this with a DirectoryInfo and FileInfo, inplace of the style I did now. But this had a weird outcome
                             ///Where a subdir folder would be created, but the files would be copied to root. Doing it this way works
@@ -331,7 +375,7 @@ namespace FolderMove
                                                 label7.Text = "";
                                                 listBox1.Items.Add("Starting Move of  " + SourceStream.Name);
                                             });
-                                            
+
                                             await SourceStream.CopyToAsync(DestinationStream, 262144, token);
                                         }
                                         this.Invoke((MethodInvoker)delegate
@@ -353,10 +397,6 @@ namespace FolderMove
                                         });
                                         var destfiles = Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories);
                                         long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                                        this.Invoke((MethodInvoker)delegate
-                                        {
-                                            label6.Text = "Amount Moved  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + filesSkipped;
-                                        });
 
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -370,13 +410,14 @@ namespace FolderMove
                                 }
                             }
                         }
-                        foreach (string dirpath in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
+                        foreach (string dirpath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
-                            foreach (string filename in Directory.EnumerateFiles(dirpath))
+                            String[] skipfiles = Directory.EnumerateFiles(dirpath).ToArray();
+                            Parallel.ForEach(skipfiles, (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -385,10 +426,10 @@ namespace FolderMove
                                         }
                                     }
                                 }
-                            }
+                            });
                         }
 
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        foreach (string filename in Directory.EnumerateFiles(StartDirectory))
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
@@ -417,13 +458,6 @@ namespace FolderMove
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
                                         listBox1.Items.Add("Finished Moving  " + DestinationStream.Name);
                                     });
-                                    var destfiles = Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories);
-                                    long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                                    this.Invoke((MethodInvoker)delegate
-                                    {
-                                        label6.Text = "Amount Moved  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + filesSkipped;
-                                    });
-
                                     if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                     {
                                         DestinationStream.Close();
@@ -439,7 +473,7 @@ namespace FolderMove
 
                     var modify = Task.Run(() =>
                     {
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        foreach (string filename in Directory.EnumerateFiles(StartDirectory))
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
@@ -454,7 +488,7 @@ namespace FolderMove
                                 }
                             }
                         }
-                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        foreach (string dirPath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
@@ -525,62 +559,93 @@ namespace FolderMove
             {
                 try
                 {
-                    var getfiles = Task.Run(() =>
+                    
+                    ///Get the total number of files, and their size. Do note this will take a really long time.
+                    ///Which is why I left it off the After6 run, because those are usually very large moves.
+                    ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
+                    ///trying to get the info.
+                    var amountcopied = Task.Run(() =>
                     {
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label7.Text = "Discovering Items....";
-                        });
-                        ///Get the total number of files, and their size. Do note this will take a really long time.
-                        ///Which is why I left it off the After6 run, because those are usually very large moves.
-                        ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
-                        ///trying to get the info.
-                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
-                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label5.Text = "Total files to copy " + fCount;
-                        });
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label4.Text = "Total size to copy " + (sum / 1024f) / 1024f + " MB";
-                        });
+                        var existingFiles = Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories);
+                        var existingRoot = Directory.GetFiles(EndDirectory);
 
+                        sum += Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories)
+                                .AsParallel()
+                                .Select(f=>new FileInfo(f).Length)
+                                .Sum();
+                        sum += Directory.GetFiles(StartDirectory)
+                                .AsParallel()
+                                .Select(f => new FileInfo(f).Length)
+                                .Sum();
+                        while (isRunning == true)
+                        {
+
+                            long endsum = Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories)
+                                        .Except(existingFiles)
+                                        .Except(existingRoot)
+                                        .AsParallel()
+                                        .Select(f => new FileInfo(f).Length)
+                                        .Sum();
+
+                            endsum += Directory.GetFiles(EndDirectory)
+                                        .Except(existingFiles)
+                                        .Except(existingRoot)
+                                        .AsParallel()
+                                        .Select(f => new FileInfo(f).Length)
+                                        .Sum();
+                            float secelasped = ((float)sw.ElapsedMilliseconds / 1000);
+                            float secleft = (int)Math.Ceiling((secelasped / endsum) * (sum - endsum));
+                            TimeSpan lefttime = TimeSpan.FromSeconds(secleft);
+                            label7.Text = "Percent done " + ((100 * endsum / sum)).ToString() + "%" + " Speed: " + (endsum / 1024d / 1024d / sw.Elapsed.TotalSeconds).ToString("0.00") + " mb/s";
+                            label6.Text = "Amount copied  " + ((endsum / 1024d) / 1024d).ToString("0.00") + "/" + ((sum / 1024d) / 1024d).ToString("0.00") + " MB";
+                            label4.Text = "Files to Copy " + files;
+                            label8.Text = "Time Remaning " + lefttime.ToString();
+
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                progressBar1.Minimum = 0;
+                                progressBar1.Maximum = Convert.ToInt32(sum);
+
+                                progressBar1.Value = Convert.ToInt32(endsum);
+
+
+                            });
+                        }
+                        if (isRunning == false)
+                        {
+                            label7.Text = "";
+                        }
                     });
+                    
                     var t = Task.Run(async () =>
                     {
-                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-                    
-                        this.Invoke((MethodInvoker)delegate
+                        foreach (string dirpath in Directory.EnumerateDirectories(EndDirectory, "*", SearchOption.AllDirectories))
                         {
-                            progressBar1.Maximum = fCount;
-                        });
-
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            progressBar1.Step = 1;
-                        });
-
-                        foreach (string dirpath in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
-                        {
-                            foreach(string filename in Directory.EnumerateFiles(dirpath))
+                            String[] skipfiles = Directory.EnumerateFiles(dirpath).ToArray();
+                            Parallel.ForEach(skipfiles, (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
-                                        if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
+                                        if (DestinationStream.Length == SourceStream.Length & File.Exists(DestinationStream.Name))
                                         {
                                             DestinationStream.Close();
                                             filesSkipped++;
-                                        }
+                                        }  
                                     }
                                 }
-                            }
+                            });
                         }
-
-                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label5.Text = "Files Skipped " + filesSkipped;
+                            
+                        });
+                        sw.Start();
+                        foreach (string dirPath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
 
@@ -588,39 +653,22 @@ namespace FolderMove
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(@SrcPath.Text, @DestPath.Text), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
+                                        
                                         if (DestinationStream.Length != SourceStream.Length)
                                         {
                                             this.Invoke((MethodInvoker)delegate
                                             {
-                                                listBox1.TopIndex = listBox1.Items.Count - 1;
-                                                label7.Text = "";
                                                 listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                                listBox1.TopIndex = listBox1.Items.Count - 1;
                                             });
                                             await SourceStream.CopyToAsync(DestinationStream, 262144, token);
                                         }
-
                                         this.Invoke((MethodInvoker)delegate
                                         {
-                                            progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
-                                        });
-
-                                        this.Invoke((MethodInvoker)delegate
-                                        {
-                                            progressBar1.PerformStep();
-                                        });
-                                        this.Invoke((MethodInvoker)delegate
-                                        {
-                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Finished Copying  " + DestinationStream.Name);
-                                        });
-
-                                        var destfiles = Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories);
-                                        long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                                        this.Invoke((MethodInvoker)delegate
-                                        {
-                                            label6.Text = "Amount Copied  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + filesSkipped;
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                         });
 
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
@@ -635,11 +683,11 @@ namespace FolderMove
                                 }   
                             }
                         }
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        foreach (string filename in Directory.EnumerateFiles(EndDirectory))
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
-                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                 {
                                     if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                     {
@@ -650,7 +698,7 @@ namespace FolderMove
                             }
                         
                         }
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        foreach (string filename in Directory.EnumerateFiles(StartDirectory))
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
@@ -660,33 +708,17 @@ namespace FolderMove
                                     {
                                         this.Invoke((MethodInvoker)delegate
                                         {
-                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                         });
-                                        
+
                                         await SourceStream.CopyToAsync(DestinationStream, 262144, token);
                                     }
-
                                     this.Invoke((MethodInvoker)delegate
                                     {
-                                        progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
-                                    });
-                                    this.Invoke((MethodInvoker)delegate
-                                    {
-                                        progressBar1.PerformStep();
-                                    });
-                                    this.Invoke((MethodInvoker)delegate
-                                    {
-                                        listBox1.TopIndex = listBox1.Items.Count - 1;
                                         listBox1.Items.Add("Finished Copying  " + DestinationStream.Name);
+                                        listBox1.TopIndex = listBox1.Items.Count - 1;
                                     });
-                                    var destfiles = Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories);
-                                    long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                                    this.Invoke((MethodInvoker)delegate
-                                    {
-                                        label6.Text = "Amount Copied  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + filesSkipped;
-                                    });
-
                                     if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                     {
                                         DestinationStream.Close();
@@ -699,9 +731,11 @@ namespace FolderMove
                         }
                     });
                     await t;
+                    isRunning = false;
+                    sw.Reset();
                     var modify = Task.Run(() =>
                     {
-                       foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                       foreach (string filename in Directory.EnumerateFiles(StartDirectory))
                        {
                            using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                            {
@@ -716,7 +750,7 @@ namespace FolderMove
                                }
                            }
                        }
-                       foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                       foreach (string dirPath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                        {
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
@@ -754,8 +788,6 @@ namespace FolderMove
                     
                     listBox1.Items.Add("**********File Copy has completed!*****");
                     listBox1.TopIndex = listBox1.Items.Count - 1;
-                    label4.Text = "Total size to copy ";
-                    label5.Text = "Total files to copy ";
                     PrepareControlsForCancel();
                        
                 }
@@ -778,6 +810,7 @@ namespace FolderMove
             string StartDirectory = @SrcPath.Text;
             string EndDirectory = @DestPath.Text;
             int fileSkipped = 0;
+            bool isRunning = true;
             if (!Directory.Exists(EndDirectory))
             {
                 Directory.CreateDirectory(EndDirectory);
@@ -787,63 +820,94 @@ namespace FolderMove
                 try
                 {
                     listBox1.Items.Add("This will delete the source path. If you did not intend that please hit Stop Copy");
-                    var getfiles = Task.Run(() =>
-                    {
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label7.Text = "Discovering Items....";
-                        });
-                        ///Get the total number of files, and their size. Do note this will take a really long time.
-                        ///Which is why I left it off the After6 run, because those are usually very large moves.
-                        ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
-                        ///trying to get the info.
-                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
-                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label5.Text = "Total files to move " + fCount;
-                        });
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label4.Text = "Total size to move " + (sum / 1024f) / 1024f + " MB";
-                        });
 
+                    ///Get the total number of files, and their size. Do note this will take a really long time.
+                    ///Which is why I left it off the After6 run, because those are usually very large moves.
+                    ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
+                    ///trying to get the info.
+                    var amountcopied = Task.Run(() =>
+                    {
+                        var existingFiles = Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories);
+                        var existingRoot = Directory.GetFiles(EndDirectory);
+
+                        sum += Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories)
+                                .AsParallel()
+                                .Select(f => new FileInfo(f).Length)
+                                .Sum();
+                        sum += Directory.GetFiles(StartDirectory)
+                                .AsParallel()
+                                .Select(f => new FileInfo(f).Length)
+                                .Sum();
+                        while (isRunning == true)
+                        {
+
+                            long endsum = Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories)
+                                        .Except(existingFiles)
+                                        .Except(existingRoot)
+                                        .AsParallel()
+                                        .Select(f => new FileInfo(f).Length)
+                                        .Sum();
+
+                            endsum += Directory.GetFiles(EndDirectory)
+                                        .Except(existingFiles)
+                                        .Except(existingRoot)
+                                        .AsParallel()
+                                        .Select(f => new FileInfo(f).Length)
+                                        .Sum();
+                            float secelasped = ((float)sw.ElapsedMilliseconds / 1000);
+                            float secleft = (int)Math.Ceiling((secelasped / endsum) * (sum - endsum));
+                            TimeSpan lefttime = TimeSpan.FromSeconds(secleft);
+                            label7.Text = "Percent done " + ((100 * endsum / sum)).ToString() + "%" + " Speed: " + (endsum / 1024d / 1024d / ((int)Math.Ceiling(sw.Elapsed.TotalSeconds))).ToString("0.00") + " mb/s";
+                            label6.Text = "Amount Moved  " + ((endsum / 1024d) / 1024d).ToString("0.00") + "/" + ((sum / 1024d) / 1024d).ToString("0.00") + " MB";
+                            label4.Text = "Files to Move " + files;
+                            label8.Text = "Time Remaning " + lefttime.ToString();
+
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                progressBar1.Minimum = 0;
+                                progressBar1.Maximum = Convert.ToInt32(sum);
+
+                                progressBar1.Value = Convert.ToInt32(endsum);
+
+
+                            });
+                        }
+                        if (isRunning == false)
+                        {
+                            label7.Text = "";
+                        }
                     });
+
                     var moveTask = Task.Run(async () =>
                     {
-                        
-                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-                        
-                        this.Invoke((MethodInvoker)delegate
+                        foreach (string dirpath in Directory.EnumerateDirectories(EndDirectory, "*", SearchOption.AllDirectories))
                         {
-                            progressBar1.Maximum = fCount;
-                        });
-
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            progressBar1.Step = 1;
-                        });
-
-                        foreach (string dirpath in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
-                        {
-                            foreach (string filename in Directory.EnumerateFiles(dirpath))
+                            String[] skipfiles = Directory.EnumerateFiles(dirpath).ToArray();
+                            Parallel.ForEach(skipfiles, (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
                                     using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
-                                        if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
+                                        if (DestinationStream.Length == SourceStream.Length & File.Exists(DestinationStream.Name))
                                         {
                                             DestinationStream.Close();
                                             fileSkipped++;
                                         }
                                     }
                                 }
-                            }
+                            });
                         }
 
-                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label5.Text = "Files Skipped " + fileSkipped;
+
+                        });
+                        sw.Start();
+
+                        foreach (string dirPath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
 
@@ -859,9 +923,8 @@ namespace FolderMove
                                         {
                                             this.Invoke((MethodInvoker)delegate
                                             {
-                                                listBox1.TopIndex = listBox1.Items.Count - 1;
-                                                label7.Text = "";
                                                 listBox1.Items.Add("Starting Move of  " + SourceStream.Name);
+                                                listBox1.TopIndex = listBox1.Items.Count - 1;
                                             });
                                             await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);    
                                         }
@@ -876,15 +939,8 @@ namespace FolderMove
                                         });
                                         this.Invoke((MethodInvoker)delegate
                                         {
-                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Finished Moving  " + DestinationStream.Name);
-                                        });
-
-                                        var destfiles = Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories);
-                                        long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                                        this.Invoke((MethodInvoker)delegate
-                                        {
-                                            label6.Text = "Amount Moved  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + fileSkipped;
+                                            listBox1.TopIndex = listBox1.Items.Count - 1;
                                         });
 
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
@@ -899,13 +955,14 @@ namespace FolderMove
                                 }
                             }
                         }
-                        foreach (string dirpath in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
+                        foreach (string dirpath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
-                            foreach (string filename in Directory.EnumerateFiles(dirpath))
+                            String[] skipfiles = Directory.EnumerateFiles(dirpath).ToArray();
+                            Parallel.ForEach(skipfiles, (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -914,17 +971,17 @@ namespace FolderMove
                                         }
                                     }
                                 }
-                            }
+                            });
                         }
-
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        String[] files = Directory.EnumerateFiles(StartDirectory).ToArray();
+                        Parallel.ForEach(files, async (filename) =>
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
                                 using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                 {
                                     await pausetoken.WaitWhilePausedAsync();
-                                   
+
                                     if (DestinationStream.Length != SourceStream.Length)
                                     {
                                         this.Invoke((MethodInvoker)delegate
@@ -948,13 +1005,6 @@ namespace FolderMove
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
                                         listBox1.Items.Add("Finished Moving  " + DestinationStream.Name);
                                     });
-                                    var destfiles = Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories);
-                                    long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                                    this.Invoke((MethodInvoker)delegate
-                                    {
-                                        label6.Text = "Amount Moved  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + fileSkipped;
-                                    });
-
                                     if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                     {
                                         DestinationStream.Close();
@@ -964,10 +1014,11 @@ namespace FolderMove
 
                                 }
                             }
-                        }
+                        });
+                        label6.Text += " Files Skipped " + fileSkipped;
                     });
                     await moveTask;
-
+                    isRunning = false;
                     var modify = Task.Run(() =>
                     {
                         foreach (string filename in Directory.EnumerateFiles(StartDirectory))
@@ -985,7 +1036,7 @@ namespace FolderMove
                                 }
                             }
                         }
-                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        foreach (string dirPath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             foreach (string filename in Directory.EnumerateFiles(dirPath))
                             {
@@ -1058,65 +1109,97 @@ namespace FolderMove
             {
                 try
                 {
-                    var getfiles = Task.Run(() =>
+                    ///Get the total number of files, and their size. Do note this will take a really long time.
+                    ///Which is why I left it off the After6 run, because those are usually very large moves.
+                    ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
+                    ///trying to get the info.
+                    var amountcopied = Task.Run(() =>
                     {
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label7.Text = "Discovering Items....";
-                        });
-                        ///Get the total number of files, and their size. Do note this will take a really long time.
-                        ///Which is why I left it off the After6 run, because those are usually very large moves.
-                        ///If you are talking 100s of gigs or even coming close to TB, it would eclipse the timers
-                        ///trying to get the info.
-                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-                        var files = Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories);
-                        long sum = (from file in files let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label5.Text = "Total files to copy " + fCount;
-                        });
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label4.Text = "Total size to copy " + (sum / 1024f) / 1024f + " MB";
-                        });
+                        var existingFiles = Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories);
+                        var existingRoot = Directory.GetFiles(EndDirectory);
 
+                        sum += Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories)
+                                .AsParallel()
+                                .Select(f => new FileInfo(f).Length)
+                                .Sum();
+                        sum += Directory.GetFiles(StartDirectory)
+                                .AsParallel()
+                                .Select(f => new FileInfo(f).Length)
+                                .Sum();
+                        while (isRunning == true)
+                        {
+
+                            long endsum = Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories)
+                                        .Except(existingFiles)
+                                        .Except(existingRoot)
+                                        .AsParallel()
+                                        .Select(f => new FileInfo(f).Length)
+                                        .Sum();
+
+                            endsum += Directory.GetFiles(EndDirectory)
+                                        .Except(existingFiles)
+                                        .Except(existingRoot)
+                                        .AsParallel()
+                                        .Select(f => new FileInfo(f).Length)
+                                        .Sum();
+                            float secelasped = ((float)sw.ElapsedMilliseconds / 1000);
+                            float secleft = (int)Math.Ceiling((secelasped / endsum) * (sum - endsum));
+                            TimeSpan lefttime = TimeSpan.FromSeconds(secleft);
+                            label7.Text = "Percent done " + ((100 * endsum / sum)).ToString() + "%" + " Speed: " + (endsum / 1024d / 1024d / sw.Elapsed.TotalSeconds).ToString("0.00") + " mb/s";
+                            label6.Text = "Amount copied  " + ((endsum / 1024d) / 1024d).ToString("0.00") + "/" + ((sum / 1024d) / 1024d).ToString("0.00") + " MB";
+                            label4.Text = "Files to Copy " + files;
+                            label8.Text = "Time Remaning " + lefttime.ToString();
+
+                            this.Invoke((MethodInvoker)delegate
+                            {
+                                progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                                progressBar1.Minimum = 0;
+                                progressBar1.Maximum = Convert.ToInt32(sum);
+
+                                progressBar1.Value = Convert.ToInt32(endsum);
+
+
+                            });
+                        }
+                        if (isRunning == false)
+                        {
+                            label7.Text = "";
+                        }
                     });
-                    var copyTask = Task.Run(async () =>
+
+                    var copyTask= Task.Run(async () =>
                     {
-                        int fCount = Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories).Length;
-
-                        this.Invoke((MethodInvoker)delegate
+                        foreach (string dirpath in Directory.EnumerateDirectories(EndDirectory, "*", SearchOption.AllDirectories))
                         {
-                            progressBar1.Maximum = fCount;
-                        });
-
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            progressBar1.Step = 1;
-                        });
-                        foreach (string dirpath in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
-                        {
-                            foreach (string filename in Directory.EnumerateFiles(dirpath))
+                            String[] skipfiles = Directory.EnumerateFiles(dirpath).ToArray();
+                            Parallel.ForEach(skipfiles, (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
                                     using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
-                                        if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
+                                        if (DestinationStream.Length == SourceStream.Length & File.Exists(DestinationStream.Name))
                                         {
                                             DestinationStream.Close();
                                             fileSkipped++;
                                         }
                                     }
                                 }
-                            }
+                            });
                         }
 
-                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            label5.Text = "Files Skipped " + fileSkipped;
+
+                        });
+                        sw.Start();
+                        foreach (string dirPath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
                             Directory.CreateDirectory(dirPath.Replace(StartDirectory, EndDirectory));
 
-                            foreach (string filename in Directory.EnumerateFiles(dirPath))
+                            String[] dirfiles = Directory.EnumerateFiles(dirPath).ToArray();
+                            Parallel.ForEach(dirfiles, async (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
@@ -1129,10 +1212,9 @@ namespace FolderMove
                                             this.Invoke((MethodInvoker)delegate
                                             {
                                                 listBox1.TopIndex = listBox1.Items.Count - 1;
-                                                label7.Text = "";
                                                 listBox1.Items.Add("Starting Copy of  " + SourceStream.Name);
                                             });
-                                            await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);                                            
+                                            await SourceStream.CopyToAsync(DestinationStream, 262144, cancelToken);
                                         }
 
                                         this.Invoke((MethodInvoker)delegate
@@ -1148,13 +1230,6 @@ namespace FolderMove
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
                                             listBox1.Items.Add("Finished Copying  " + DestinationStream.Name);
                                         });
-                                        var destfiles = Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories);
-                                        long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                                        this.Invoke((MethodInvoker)delegate
-                                        {
-                                            label6.Text = "Amount Copied  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + fileSkipped;
-                                        });
-
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
                                             DestinationStream.Close();
@@ -1164,15 +1239,16 @@ namespace FolderMove
                                     }
 
                                 }
-                            }
+                            });
                         }
-                        foreach (string dirpath in Directory.GetDirectories(EndDirectory, "*", SearchOption.AllDirectories))
+                        foreach (string dirpath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
-                            foreach (string filename in Directory.EnumerateFiles(dirpath))
+                            String[] skipfiles = Directory.EnumerateFiles(dirpath).ToArray();
+                            Parallel.ForEach(skipfiles, (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
-                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+                                    using (FileStream DestinationStream = File.Open(filename.Replace(StartDirectory, EndDirectory), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
                                     {
                                         if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                         {
@@ -1181,9 +1257,10 @@ namespace FolderMove
                                         }
                                     }
                                 }
-                            }
+                            });
                         }
-                        foreach (string filename in Directory.EnumerateFiles(@SrcPath.Text))
+                        String[] files = Directory.EnumerateFiles(StartDirectory).ToArray();
+                        Parallel.ForEach(files, async (filename) =>
                         {
                             using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                             {
@@ -1214,13 +1291,6 @@ namespace FolderMove
                                         listBox1.TopIndex = listBox1.Items.Count - 1;
                                         listBox1.Items.Add("Finished Copying  " + DestinationStream.Name);
                                     });
-                                    var destfiles = Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories);
-                                    long endsum = (from file in destfiles let fileInfo = new FileInfo(file) select fileInfo.Length).Sum();
-                                    this.Invoke((MethodInvoker)delegate
-                                    {
-                                        label6.Text = "Amount Copied  " + (endsum / 1024f) / 1024f + " MB" + " Files Skipped " + fileSkipped;
-                                    });
-
                                     if (File.Exists(DestinationStream.Name) && DestinationStream.Length == SourceStream.Length)
                                     {
                                         DestinationStream.Close();
@@ -1229,30 +1299,32 @@ namespace FolderMove
                                     cancelToken.ThrowIfCancellationRequested();
                                 }
                             }
-                        }
+                        });
                     });
                     await copyTask;
-
+                    isRunning = false;
                     var modify = Task.Run(() =>
                     {
-                        foreach (string filename in Directory.EnumerateFiles(StartDirectory))
+                        String[] files = Directory.EnumerateFiles(StartDirectory).ToArray();
+                        Parallel.ForEach(files, (filename) =>
                         {
-                            using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                            {
-                                using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
-                                {
-                                    DateTime dt = File.GetCreationTime(SourceStream.Name);
-                                    DateTime at = File.GetLastAccessTime(SourceStream.Name);
-                                    DateTime wt = File.GetLastWriteTime(SourceStream.Name);
-                                    File.SetCreationTime(DestinationStream.Name, dt);
-                                    File.SetLastAccessTime(DestinationStream.Name, at);
-                                    File.SetLastWriteTime(DestinationStream.Name, wt);
-                                }
-                            }
-                        }
-                        foreach (string dirPath in Directory.GetDirectories(StartDirectory, "*", SearchOption.AllDirectories))
+                           using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                           {
+                               using (FileStream DestinationStream = File.Open(EndDirectory + filename.Substring(filename.LastIndexOf('\\')), FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                               {
+                                   DateTime dt = File.GetCreationTime(SourceStream.Name);
+                                   DateTime at = File.GetLastAccessTime(SourceStream.Name);
+                                   DateTime wt = File.GetLastWriteTime(SourceStream.Name);
+                                   File.SetCreationTime(DestinationStream.Name, dt);
+                                   File.SetLastAccessTime(DestinationStream.Name, at);
+                                   File.SetLastWriteTime(DestinationStream.Name, wt);
+                               }
+                           }
+                        });
+                        foreach (string dirPath in Directory.EnumerateDirectories(StartDirectory, "*", SearchOption.AllDirectories))
                         {
-                            foreach (string filename in Directory.EnumerateFiles(dirPath))
+                            String[] skipfiles = Directory.EnumerateFiles(dirPath).ToArray();
+                            Parallel.ForEach(skipfiles, (filename) =>
                             {
                                 using (FileStream SourceStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                                 {
@@ -1266,7 +1338,7 @@ namespace FolderMove
                                         File.SetLastWriteTime(DestinationStream.Name, wt);
                                     }
                                 }
-                            }
+                            });
 
 
                         }
