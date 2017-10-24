@@ -28,7 +28,7 @@ namespace FolderMove
         public int extraFiles = 0;
         public int filesSkipped = 0;
         public int filesCopied = 0;
-        public bool isRunning = true;
+        public bool isRunning;
         //bool timerRunning = true;
         long sum = 0;
         long endsum;
@@ -111,10 +111,11 @@ namespace FolderMove
         /// <param name="e"></param>
         internal async void startBtn_Click(object sender, EventArgs e)
         {
+            isRunning = true;
             StartDirectory = @SrcPath.Text;
             EndDirectory = @DestPath.Text;
             StartDirEnd = Alphaleonis.Win32.Filesystem.Path.GetFileName(StartDirectory.TrimEnd(Alphaleonis.Win32.Filesystem.Path.DirectorySeparatorChar));
-            logdir = @"\\path\to\log";
+            logdir = @"\\path\to\logs";
             logdir = Alphaleonis.Win32.Filesystem.Path.Combine(logdir, uname);
             string logname = String.Format("{0}__{1}", DateTime.Now.ToString("yyyyMMdd_hh.mm.ss"), StartDirEnd);
             string logfile = Alphaleonis.Win32.Filesystem.Path.Combine(logdir, logname);
@@ -195,8 +196,6 @@ namespace FolderMove
                 });
                 PrepareControlForStart();
                 await RunCopyorMove(StartDirectory, EndDirectory, pausetoken, token, logfile, filesSkipped, filesCopied, isRunning, sum, endsum, progressvalue, progressum);
-
-
             }
         }
         /// <summary>
@@ -269,13 +268,16 @@ namespace FolderMove
 
         private void StopBtn_Click(object sender, EventArgs e)
         {
+            
             PrepareControlsForCancel();
             _cts.Cancel();
+            sw.Stop();
             this.Invoke((MethodInvoker)delegate
             {
                 listBox1.Items.Add("**********File Copy has Stopped!*****");
                 listBox1.TopIndex = listBox1.Items.Count - 1;
                 progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+                isRunning = false;
             });
 
         }
@@ -294,6 +296,7 @@ namespace FolderMove
                     listBox1.Items.Add("Paused");
                     listBox1.TopIndex = listBox1.Items.Count - 1;
                 });
+                sw.Stop();
             }
             else
             {
@@ -440,56 +443,12 @@ namespace FolderMove
                     var existingFiles = Alphaleonis.Win32.Filesystem.Directory.GetFiles(EndDirectory, "*", SearchOption.AllDirectories);
                     var existingRoot = Alphaleonis.Win32.Filesystem.Directory.GetFiles(EndDirectory);
 
-                    //sum = Alphaleonis.Win32.Filesystem.Directory.GetFiles(StartDirectory, "*", SearchOption.AllDirectories)
-                    //        .AsParallel()
-                    //        .Select(f => new Alphaleonis.Win32.Filesystem.FileInfo(f).Length)
-                    //        .Sum();
-                    //sum += Alphaleonis.Win32.Filesystem.Directory.GetFiles(StartDirectory)
-                    //        .AsParallel()
-                    //        .Select(f => new Alphaleonis.Win32.Filesystem.FileInfo(f).Length)
-                    //        .Sum();
-                    //files += Alphaleonis.Win32.Filesystem.Directory.EnumerateFiles(StartDirectory).Count();
                     files += Alphaleonis.Win32.Filesystem.Directory.EnumerateFiles(StartDirectory, "*", SearchOption.AllDirectories).Count();
                     while (isRunning == true)
                     {
-
-                        endsum = Alphaleonis.Win32.Filesystem.Directory.EnumerateFiles(EndDirectory, "*", SearchOption.AllDirectories)
-                                    .Except(existingFiles)
-                                    .Except(existingRoot)
-                                    .AsParallel()
-                                    .Select(f => new Alphaleonis.Win32.Filesystem.FileInfo(f).Length)
-                                    .Sum();
-
-                        //endsum += Alphaleonis.Win32.Filesystem.Directory.GetFiles(EndDirectory)
-                        //            .Except(existingFiles)
-                        //            .Except(existingRoot)
-                        //            .AsParallel()
-                        //            .Select(f => new Alphaleonis.Win32.Filesystem.FileInfo(f).Length)
-                        //            .Sum();
                         float secelasped = ((float)sw.ElapsedMilliseconds / 1000);
                         float secleft = (int)Math.Ceiling((secelasped / endsum) * (sum - endsum));
                         TimeSpan lefttime = TimeSpan.FromSeconds(secleft);
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label9.Text = "Speed: " + (endsum / 1024d / 1024d / sw.Elapsed.TotalSeconds).ToString("0.00") + " mb/s";
-                            if (sum > 1024 && sum < 1048576)
-                            {
-                                label6.Text = "Amount copied  " + ((endsum / 1024d)).ToString("0.00") + "/" + ((sum / 1024d)).ToString("0.00") + " KB";
-                            }
-                            else if (sum > 1048576 && sum < 1073741824)
-                            {
-                                label6.Text = "Amount copied  " + ((endsum / 1024d) / 1024d).ToString("0.00") + "/" + ((sum / 1024d) / 1024d).ToString("0.00") + " MB";
-                            }
-                            else if (sum > 1073741824)
-                            {
-                                label6.Text = "Amount copied  " + (((endsum / 1024d) / 1024d)/1024d).ToString("0.00") + "/" + (((sum / 1024d) / 1024d)/1024d).ToString("0.00") + " GB";
-                            }
-                            label4.Text = "Files to Copy " + (files - filesCopied) + " Files Copied " + (filesCopied);
-                            //label10.Text = "Files Copied " + (filesCopied);
-                            label8.Text = "Time Remaning " + lefttime.ToString();
-                            label7.Text = "Percent done " + ((100 * endsum / sum)).ToString() + "%";
-                        });
-
                         if (sum > Int32.MaxValue)
                         {
                             progressum = sum / 1024;
@@ -518,6 +477,23 @@ namespace FolderMove
                             progressBar1.Maximum = Convert.ToInt32(progressum);
 
                             progressBar1.Value = Convert.ToInt32(progressvalue);
+                            label9.Text = "Speed: " + (endsum / 1024d / 1024d / sw.Elapsed.TotalSeconds).ToString("0.00") + " mb/s";
+                            if (sum > 1024 && sum < 1048576)
+                            {
+                                label6.Text = "Amount copied  " + ((endsum / 1024d)).ToString("0.00") + "/" + ((sum / 1024d)).ToString("0.00") + " KB";
+                            }
+                            else if (sum > 1048576 && sum < 1073741824)
+                            {
+                                label6.Text = "Amount copied  " + ((endsum / 1024d) / 1024d).ToString("0.00") + "/" + ((sum / 1024d) / 1024d).ToString("0.00") + " MB";
+                            }
+                            else if (sum > 1073741824)
+                            {
+                                label6.Text = "Amount copied  " + (((endsum / 1024d) / 1024d) / 1024d).ToString("0.00") + "/" + (((sum / 1024d) / 1024d) / 1024d).ToString("0.00") + " GB";
+                            }
+                            label4.Text = "Files to Copy " + (files - filesCopied) + " Files Copied " + (filesCopied);
+                            //label10.Text = "Files Copied " + (filesCopied);
+                            label8.Text = "Time Remaning " + lefttime.ToString();
+                            label7.Text = "Percent done " + ((100 * endsum / sum)).ToString() + "%";
                         });
                     }
                     if (isRunning == false)
@@ -565,7 +541,7 @@ namespace FolderMove
                                             });
                                             //filesSkipped++;
                                             //files--;
-                                            //endsum += DestinationStream.Length;
+                                            endsum += DestinationStream.Length;
                                             //SkippedFiles.Add(destination);
                                             DestinationStream.Close();
                                             SourceStream.Close();
@@ -577,7 +553,6 @@ namespace FolderMove
                                                 listBox1.Items.Add("Starting Copy of  " + source);
                                                 listBox1.TopIndex = listBox1.Items.Count - 1;
                                             });
-
                                             await SourceStream.CopyToAsync(DestinationStream, 262144, token);
                                             this.Invoke((MethodInvoker)delegate
                                             {
@@ -586,6 +561,7 @@ namespace FolderMove
                                             });
                                             filesCopied++;
                                             FileNames.Add(destination);
+                                            endsum += DestinationStream.Length;
                                         }
 
                                         token.ThrowIfCancellationRequested();
@@ -625,7 +601,7 @@ namespace FolderMove
                                         });
                                         //filesSkipped++;
                                         //files--;
-                                        //endsum += DestinationStream.Length;
+                                        endsum += DestinationStream.Length;
                                         //SkippedFiles.Add(destination);
                                         DestinationStream.Close();
                                         SourceStream.Close();
@@ -637,7 +613,6 @@ namespace FolderMove
                                             listBox1.Items.Add("Starting Copy of  " + source);
                                             listBox1.TopIndex = listBox1.Items.Count - 1;
                                         });
-
                                         await SourceStream.CopyToAsync(DestinationStream, 262144, token);
                                         this.Invoke((MethodInvoker)delegate
                                         {
@@ -646,6 +621,7 @@ namespace FolderMove
                                         });
                                         filesCopied++;
                                         FileNames.Add(destination);
+                                        endsum += DestinationStream.Length;
                                     }
                                     token.ThrowIfCancellationRequested();
                                 }
@@ -664,7 +640,6 @@ namespace FolderMove
                     }
                 });
                 await moveTask;
-                isRunning = false;
                 var modify = Task.Run(async () =>
                 {
                     this.Invoke((MethodInvoker)delegate
