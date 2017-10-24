@@ -114,7 +114,7 @@ namespace FolderMove
             StartDirectory = @SrcPath.Text;
             EndDirectory = @DestPath.Text;
             StartDirEnd = Alphaleonis.Win32.Filesystem.Path.GetFileName(StartDirectory.TrimEnd(Alphaleonis.Win32.Filesystem.Path.DirectorySeparatorChar));
-            logdir = @"\\path\to\store\logs";
+            logdir = @"\\path\to\log";
             logdir = Alphaleonis.Win32.Filesystem.Path.Combine(logdir, uname);
             string logname = String.Format("{0}__{1}", DateTime.Now.ToString("yyyyMMdd_hh.mm.ss"), StartDirEnd);
             string logfile = Alphaleonis.Win32.Filesystem.Path.Combine(logdir, logname);
@@ -424,10 +424,6 @@ namespace FolderMove
                         });
                         SkippedFiles.Add(v.FullName);
                         sum += v.Length;
-                        this.Invoke((MethodInvoker)delegate
-                        {
-                            label10.Text = v.Length.ToString();
-                        });
                     }
                     this.Invoke((MethodInvoker)delegate
                     {
